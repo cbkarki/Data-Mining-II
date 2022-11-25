@@ -1,0 +1,253 @@
+---
+title: "Project-1"
+author:
+- Chitra Karki^[cbkarki@miners.utep.edu]
+- University of Texas at El Paso (UTEP)
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    keep_tex: yes
+    fig_caption: yes
+    latex_engine: pdflatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
+geometry: margin=1in
+fontsize: 11pt
+spacing: single
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb}
+- \usepackage{amsfonts}
+- \usepackage{amsthm}
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- "\\rhead{STAT 5494-- Statistical Machine Learning}"
+- \cfoot{\thepage}
+- \usepackage{algorithm}
+- \usepackage[noend]{algpseudocode}
+---
+
+\noindent
+
+\rule{17.5cm}{0.8pt}
+
+\section{Import the data}
+Bring the data into R (or Python).
+
+```{r}
+dat = read.csv(file = "diabetes_data_upload.csv",header = T)
+```
+
+
+\section{EDA}
+Explore the data with EDA (Exploratory Data Analysis) by inspecting the variable
+types, outlying and possibly wrong records, and other issues. In particular,
+\begin{itemize}
+\item inspect the frequency distribution of the target variable class and see, e.g., whether we
+have an unbalanced classification problem.
+\item Are there missing values? If so, handle them with an appropriate strategy such as listwise
+deletion or single/multiple imputation.
+\end{itemize}
+
+
+```{r}
+# dimension of data frame, 
+dim(dat) # the dimension is 520  17
+
+# variables types
+str(dat) # age is of integer type and rest are of character type
+
+
+# checking the unique values in each columns
+for (i in 1:ncol(dat)) {
+  print(table(dat[,i]))
+
+}  
+
+# freq distbn of column class
+plot(as.factor(dat$class),ylab = "frequency")
+
+table(dat$class) # 200 negative and 320 positive cases
+200/520; 320/520 # do not seem like unbalanced classification problem
+
+# na values
+sum(is.na(dat))  # no NA values
+
+# library(VIM)
+# aggr(dat, col=c('navyblue','yellow'), numbers=TRUE, sortVars=TRUE,
+#     labels=names(dat), cex.axis=.7, gap=3, ylab=c("Missing%","Pattern"))
+```
+
+\section{Variable Screening} 
+Explore the marginal (bivariate) associations between class and each
+attribute/predictor. The involved tools depend on the type of the attribute:
+\begin{itemize}
+\item For a continuous predictor, use the parametric two-sample t test or the nonparametric
+Wilcoxon rank-sum test.
+
+\item For a categorical predictor, use the $\chi^2$ test of independence or Fisher's exact test in case
+of small cell counts.
+\end{itemize}
+Output the resultant p-value for each predictor. Select a few interesting findings to present.
+Apply a liberal threshold significance level, say, $\alpha$ = 0.25, to remove a few unimportant predictors.
+Note that variable screening helps reduce the dimension of predictors. Applying a liberal
+threshold for statistical significance here helps prevent removing predictors that are apparently
+not associated with the target variable without considering other predictors but may become
+important in a model when adding (or adjusting for) other predictors.\newline
+-- Optionally, you may also compute and visualize the correlation matrix. Nevertheless, be
+careful with the choice of the correlation measure.
+
+```{r}
+# two sample t-test
+test.t = t.test(dat$Age~dat$class)  # p-value = 0.01319
+test.t$p.value < 0.25 
+# alternative hypothesis is true, so we will keep the age variable in model
+
+# wilcoxon test
+wilcox.test(dat$Age~dat$class) # p-value = 0.0124
+
+# chi-squared test for Independence
+p.values = NULL
+for (i in 2:16) {
+  test = chisq.test(dat[,i],dat[,17])
+  p.values[i-1] = test$p.value
+}
+
+#creating table of p values wrt output variable class
+p.val.tab = data.frame(Variables = colnames(dat)[1:16], p.value = c(test.t$p.value,p.values)) 
+
+# selection of variables with  0.25 level of significance, pick = reject ho, drop= accept ho
+p.val.tab$decission = ifelse(p.val.tab$p.value < 0.25,"pick","drop")
+p.val.tab
+
+# variables to drop 
+p.val.tab[which(p.val.tab[,3]=="drop"),1]
+
+# dropping the variables
+
+dat = dat[,-c(which(p.val.tab[,3]=="drop"))]
+
+```
+
+
+\section {Data Partition}
+Partition the data into two parts, the training data D1 and the test data
+D2, with a ratio of 2:1.
+
+```{r}
+set.seed(123)
+n.row = nrow(dat)
+indices = sample(1:n.row,size = round((2/3)*n.row))
+
+# converting the class to level
+dat$class = ifelse(dat$class=="Negative",0,1)
+
+# training data
+d1 = dat[indices,]
+
+# test data
+d2 = dat[-indices,]
+
+y.obs = d2$class
+x.test = d2[,-17]
+
+```
+
+
+\section {Logistic Regression Modeling} 
+We now build a logistic regression model for this medical diagnosis task.
+
+\begin{itemize}
+\item[(a)] Fit the regularized logistic regression using the training data D1. While L1 regularization or LASSO is suggested here, you may use other penalty functions of your choice.\newline
+Select the best tuning parameter $\lambda$ using a validation method such as v-fold cross validation. Specify the criterion that you use for the selection.\newline
+
+-- Optionally, you may also consider including first-order interaction terms.
+
+\item[(b)] Present your final `best' model. Which variables are important predictors? Interpret the results.
+\end{itemize}
+
+```{r}
+# (a)
+
+# ============================================
+# LOGISTIC REGRESSION WITH REGULARIZATION
+# ============================================
+
+# install.packages("ncvreg")# none concave regression
+suppressPackageStartupMessages(library(ncvreg))  
+
+y = d1$class
+x = model.matrix(~-1+ Age + Gender + Polyuria + Polydipsia + sudden.weight.loss + 
+               weakness + Polyphagia + Genital.thrush + visual.blurring +
+                Irritability + partial.paresis +
+               muscle.stiffness + Alopecia + Obesity,
+               data = d1[,-17])
+
+# tuning lambda
+cvfit.SCAD = cv.ncvreg(X=x,y=y, nfolds=5, family="binomial", penalty="SCAD", 
+	lambda.min=.0001, nlambda=500, eps=.001, max.iter=1000,seed = 123) 
+
+# USING THE ARGUMENT penalty="MCP" TO CHOOSE AMONG DIFFERENT PENALTY FUNCTIONS
+# glmnet is better it uses 2 se rule
+
+plot(cvfit.SCAD)
+
+# survived betas 
+result.SCAD <- cvfit.SCAD$fit
+beta.hat <- as.vector(result.SCAD$beta[-1, cvfit.SCAD$min])
+cutoff <- 0
+
+# predictors included in final model 
+terms <- colnames(x)[abs(beta.hat) > cutoff]; terms # x is the model matrix
+
+
+formula.SCAD <- as.formula(paste(c("class ~ 1+ Gender+ Age",
+                          paste(lapply(terms[3:length(terms)], function(x) substr(x,1,nchar(x)-3)),collapse = "+")), collapse=" + "))
+
+
+# (b)
+#final model
+fit.SCAD <- glm(formula.SCAD , data = d1, family="binomial")
+
+summary(fit.SCAD)
+
+```
+The summary of the final fitted model shows the predictors in final model which were obtained form cross validation method corresponding to the minimum cross validation error. According to final model, predictors Age, Polyphagia ,visual.blurring,muscle.stiffness Obesity are not significant at any level for prediction the class variable.
+
+\section{Model Assessment/Deployment} 
+Apply the final logistic model to the test data D2. Present
+the ROC curve and report the area under the curve, i.e., the C-index or C-statistic.
+
+```{r}
+# prediction for test data d2 ie x.test
+yhat <- predict(fit.SCAD, newdata=x.test, type="response")
+
+# ==================
+# ROC CURVE AND AUC
+# ==================
+
+# install.packages("verification")
+suppressPackageStartupMessages(library(verification))
+a.ROC <- roc.area(obs=y.obs, pred=yhat)$A
+print(a.ROC)
+
+# USING PACKAGE cvAUC
+# install.packages("cvAUC")
+suppressPackageStartupMessages(library(cvAUC))
+AUC <- ci.cvAUC(predictions=yhat, labels=y.obs, folds=1:NROW(x.test), confidence=0.95); AUC 
+auc.ci <- round(AUC$ci, digits=3);auc.ci
+
+suppressPackageStartupMessages(library(verification))
+mod.glm <- verify(obs=y.obs, pred=yhat)
+roc.plot(mod.glm, plot.thres = NULL)
+text(x=0.5, y=0.05, paste("Area under ROC =", round(AUC$cvAUC, digits=3), 
+	"with 95% CI (", auc.ci[1], ",", auc.ci[2], ").",
+	sep=" "), col="blue", cex=1.2)
+```
+The area under the ROC curve is 0.956. Which is close to one, so the model should be a good one.

@@ -1,0 +1,345 @@
+---
+title: "Project-3"
+author:
+- Chitra Karki^[cbkarki@miners.utep.edu]
+- University of Texas at El Paso (UTEP)
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    keep_tex: yes
+    fig_caption: yes
+    latex_engine: pdflatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
+geometry: margin=1in
+fontsize: 11pt
+spacing: single
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb}
+- \usepackage{amsfonts}
+- \usepackage{amsthm}
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- "\\rhead{STAT 5494-- Statistical Machine Learning}"
+- \cfoot{\thepage}
+- \usepackage{algorithm}
+- \usepackage[noend]{algpseudocode}
+- \usepackage{xcolor}
+editor_options: 
+  chunk_output_type: console
+---
+
+\noindent
+
+\rule{17.5cm}{0.8pt}
+
+\section{Kernel PCA}
+ Consider the data on optical recognition of handwritten digits, available from
+UCI Machine Learning Repository:\newline
+\hspace{2cm}<https://archive.ics.uci.edu/ml/machine-learning-databases/optdigits/> \newline
+The following three files are needed: (1) optdigits.names (a description of the data set); (2)
+optdigits.tra (the training set); and (3) optdigits.tes (the test set).
+
+
+\begin {itemize} 
+\item[(a)] Bring in the training set \textbf{optdigits.tra}, which has sixty-four (p = 64) inputs plus the
+target variable that indicates the digit 0–9. Examine the data briefly. Remove columns
+that are unary (i.e., containing only one values) or close to being unary (i.e., nearly all
+values are the same except a few). And check on possible missing values.
+
+\item[(b)] Excluding the target variables, run the ordinary principal components analysis (PCA)
+with the training set. Output the scree plot of the variances (i.e., eigenvalues) of the
+principal components. Make a scatter plot of the first two PCs and show the target
+class variable (i.e., digit number) with different symbols and colors. Recall that this also
+corresponds to a multidimensional scaling (MDS) analysis of data. Interpret results.
+
+  \begin {itemize} 
+  \item careful with the normalization or standardization of the data before performing
+PCA. Make parallel boxplots of the attributes and inspect for necessity of data normalization.
+  \end{itemize}
+  
+\item[(c)] Run kernel PCA on the input variables only. Explain your choice of kernel function and
+the choice of parameters involved. Output the scree plot of the variances (i.e., eigenvalues)
+of the resultant principal components. Plot the first two PCs with scatted points and show
+the target class variable with different symbols and colors. Compare the kPCA results
+with the PCA results and comment with interpretations.
+
+\item[(d)] Apply both the PCA and kPCA results learned from the training data to the test set
+\textbf{optdigits.tes}, which can be simply done by using the \textbf{predict()} function. Obtain the
+first two principal components in each case and make similar plots as Part (b) {\&} (c) and
+compare
+
+\end{itemize}
+
+```{r}
+# (a)
+
+setwd("C:/Users/chitr/OneDrive - University of Texas at El Paso/data_science/semesters/sem3-fall2022/datamining-dr.su/computer projects/project-3")
+
+dat.tra = read.csv(file = "optdigits.tra")
+names(dat.tra)=paste("x",1:ncol(dat.tra),sep = "")
+
+#class labels
+table(dat.tra[,ncol(dat.tra)])
+
+# detecting uniary variablesand nearly uniary variables cut off 90%
+
+# filtering columns which have less then 5 unique values
+uni.var = c(which(as.vector(apply(dat.tra[,-ncol(dat.tra)],2,function(x) table(x)[1]/nrow(dat.tra)*100)) >= 90))
+apply(dat.tra[,uni.var],2,table)
+dat.tra = dat.tra[,-uni.var]
+
+
+# check for na values
+sum(is.na(dat.tra))
+
+```
+
+There are no missing values.For detecting uniary attributes, the relative frequency of high occurring unique value in each attribute was calculated. Attribute for which relative frequency is greater then 90 % was considered as uniary attribute. The cutoff of 90 % was defined intuitively. in this way we knocked out 16 attributes.
+
+```{r}
+# (b) ordinary pca
+
+# boxplot to see if scaling is required.
+boxplot(dat.tra,las=2)
+
+dat.tra.scaled = scale(dat.tra[,-ncol(dat.tra)],scale = T,center = T)
+boxplot(dat.tra.scaled,las=2)
+
+# ------------------
+# ORDINARY PCA 
+# ------------------
+pca <- prcomp(dat.tra.scaled, retx=TRUE, center=F, scale=F) 
+#pca
+
+# screeplot:
+#plot(pca) 
+screeplot(pca); 
+screeplot(pca, type="lines")
+
+
+# PLOT FIRST TWO PCs
+colors = rainbow(length(unique(dat.tra[,ncol(dat.tra)])))
+plot(pca$x[,1:2], pch="", main="PC.1 and PC.2")
+text(pca$x[,1:2], labels=dat.tra[,ncol(dat.tra)], 
+     col=colors[factor(dat.tra[,ncol(dat.tra)])])
+abline(v=0, lty=2)
+abline(h=0, lty=2)
+
+#  PUTS VARIANCE AND CUMULATIVE PROPORTIONS TOGETHER -- THE PARETO PLOT
+sd.pc <- pca$sdev
+var.pc <- sd.pc^2
+prop.pc <- var.pc/sum(var.pc)
+
+par(mar=c(4, 4, 4, 4))
+bar <- barplot(var.pc, ylab="Variance Explained", col="skyblue", 
+	xlab="# Princinpal Components", col.axis="blue", col.lab="blue")
+mtext(1:length(var.pc),side=1, line=1,at=bar,col="black",las=2,cex = 0.60)
+
+par(new=T)
+plot(bar, cumsum(prop.pc),axes=F,xlab="", ylab="", col="orange", type="b", 
+	col.lab="orange", col.lab="orange")
+axis(4,col="orange", col.ticks="orange", col.axis="orange")
+abline(h=.90, lty=2, col="green", lwd=.8)
+mtext("Cumulative Proportion of Variance Explained",side=4,line=3,col="orange")
+title(main = 'Pareto Chart from PCA')
+```
+Observing boxplots, it can be concluded that the scaling is needed because the variance in each columns is different and will affect the PC analysis.Its observed that the pca didn't separate the handwritten digits well because the overlap are present.First five principal components explain most of the variation, after that the variation explained progresses in a slow rate.
+
+
+```{r}
+# (c) kernel pca
+# ------------------
+# KERNEL PCA 
+# ------------------
+library("kernlab")
+kpc <- kpca(~., data=as.data.frame(dat.tra.scaled), kernel="rbfdot", 
+	kpar=list(sigma=0.2), features=10)
+
+# ?kpca
+#eig(kpc)        # returns the eigenvalues
+#kernelf(kpc)    # returns the kernel used when kpca was performed
+PCV <- pcv(kpc)        # returns the principal component vectors (BE CAREFUL!)
+#dim(PCV); head(PCV); 
+PC <- rotated(kpc)    # returns the data projected in the (kernel) pca space
+#dim(PC); head(PC); 
+
+# Plot THE DATA PROJECTION ON THE KERNEL PCS 
+plot(PC[,1:2], pch="", main="1st kernel PC and 2nd kernel PC",
+     xlab="1st Kernel PC", ylab="2nd Kernel PC")
+text(PC[,1:2], labels=dat.tra[,ncol(dat.tra)], 
+     col=colors[factor(dat.tra[,ncol(dat.tra)])])
+abline(v=0, lty=2)
+abline(h=0, lty=2)
+
+
+# EMBED WITH PREDICTION ON NEW DATA 
+# pred <- predict(kpc, bumpus.scaled); 
+# head(pred); head(rotated(kpc))
+
+# COMPUTE NONCUMULATIVE/CUMULATIVE PROPORTIONS OF VARIATION EXPLAINED
+var.pc <- eig(kpc)
+names(var.pc) <- 1:length(var.pc)
+prop.pc <- var.pc/sum(var.pc)
+
+par(mfrow=c(1,2), mar=rep(4,4))
+# NONCUMULATIVE
+plot(prop.pc, xlab = "Principal Component", 
+	ylab = "Proportion of Variance Explained", type = "b")
+# CUMULATIVE
+plot(cumsum(prop.pc), xlab = "Principal Component", col="blue",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b", pch=19)
+
+#  PUTS VARIANCE AND CUMULATIVE PROPORTIONS TOGETHER -- THE PARETO PLOT
+par(mar=c(4, 4, 4, 4), mfrow=c(1,1))
+bar <- barplot(var.pc, ylab="Variance Explained", col="cadetblue3", 
+	xlab="Princinpal Components", col.axis="gray45", col.lab="gray45")
+mtext(1:length(var.pc),side=1, line=1,at=bar,col="black")
+# mtext(" ",side=1,line=3,col="black")
+par(new=T)
+plot(bar, cumsum(prop.pc),axes=F,xlab="", ylab="", col="chocolate", type="b", 
+	col.lab="orange", col.lab="orange", lwd=2)
+axis(4, col="chocolate2", col.ticks="orange", col.axis="chocolate2")
+abline(h=.90, lty=2, col="lightgoldenrod4", lwd=2)
+mtext("Cumulative Proportion of Variance Explained", side=4, 
+      line=3,col="chocolate2")
+title(main = 'Pareto Chart from Kernel PCA', cex.main=1.5)
+```
+For kernel PCA rbf kernel function was used with sigma 0.2. 10 features were outputted. First two kernel PCA captured variations of 1, 6 and 0, but other digits are not distinguished. 
+
+```{r}
+# (d) 
+dat.test = read.csv("optdigits.tes")
+names(dat.test)=paste("x",1:ncol(dat.test),sep = "")
+
+table(dat.test[,ncol(dat.test)])
+
+# eliminating the columns that were eliminated during the process of cleaning data for training
+dat.test = dat.test[,-uni.var]
+
+# scaling the testing data with means and sd of training set.
+means = apply(dat.tra[,-ncol(dat.tra)], 2, mean)
+sds = apply(dat.tra[,-ncol(dat.tra)], 2, sd)
+
+dat.test.scaled = scale(dat.test[,-ncol(dat.test)],center = means,scale = sds)
+
+# prediction for ordinary PCA
+
+pca.predict = predict(pca,newdata=dat.test.scaled)[,1:2]
+
+colors = rainbow(length(unique(dat.test[,ncol(dat.test)])))
+plot(pca.predict, pch="", main="PC.1 and PC.2 (prediction)")
+text(pca.predict, labels=dat.test[,ncol(dat.test)], 
+     col=colors[factor(dat.test[,ncol(dat.test)])])
+abline(v=0, lty=2)
+abline(h=0, lty=2)
+
+
+# predication for kernel PCA
+kpc.predict = predict(kpc,dat.test.scaled)[,1:2]
+
+colors = rainbow(length(unique(dat.test[,ncol(dat.test)])))
+plot(kpc.predict, pch="", main="kernel PC.1 and  kernel PC.2 (preidiction")
+text(kpc.predict, labels=dat.test[,ncol(dat.test)], 
+     col=colors[factor(dat.test[,ncol(dat.test)])])
+abline(v=0, lty=2)
+abline(h=0, lty=2)
+
+```
+
+The predictions from pca and kernel pca both didn't separate the digits well. though both methods seperate some of the digits in some extend, most of them have overlaps.
+
+
+\section {Association Rules} 
+A parsed-version (with punctuation and stop words removed) of the
+King James Bible1 is provided in:\newline
+<http://snap.stanford.edu/class/cs246-data/AV1611Bible.txt>\newline
+Here, each line is a sentence in the document. We are interested in finding which words commonly occur together in sentences.
+
+\begin {itemize} 
+\item [(a)] 
+First read the data into R as transaction data type. This can be done using R function \textbf{read.transactions()} in the arules package:
+
+  \item library(arules) \newline
+bible <- read.transactions(file="AV1611Bible.txt",\newline
+format = "basket", sep =" ", rm.duplicates =F,\newline
+quote="") \# DOUBLE/SINGLE QUOTE ISSUE\newline
+dat <- bible; dim(dat)\newline
+inspect(dat[1:5, ])\newline
+
+\item [(b)]  
+Set up the parameters in R function \textbf{arules} appropriately with your own choices and then perform frequent itemsets and association rule analysis
+
+\item [(c)]
+List the top 5 rules in decreasing order of confidence (conf) for item sets of size/length 2 or 3 which satisfy the support threshold that you have specified. Are they interesting rules within the problem context?
+
+\item [(d)]
+List the top 5 rules in decreasing order of the lift measure for item sets of size 2 or 3. Always interpret the results.
+
+\end {itemize}
+
+```{r}
+library(arules)
+bible <- read.transactions(file="AV1611Bible.txt",
+format = "basket", sep =" ", rm.duplicates =F,
+quote="") # DOUBLE/SINGLE QUOTE ISSUE
+
+dim(bible)
+
+inspect(bible[1:5, ])
+
+image(bible[1:5000,]) # first 2500 transactions or rows, 
+#shows the sparsity of the data
+
+itemFrequency(bible[,1:10],type="relative") # supprot/frequency of the first 10 
+#distinct items or the words in the bible
+# itemFrequency(bible[,1:10],type="absolute")
+
+
+#itemFrequencyPlot(bible[,1:10],type = "absolute") 
+itemFrequencyPlot(bible,type = "relative",support=0.01,topN=10) 
+```
+
+```{r}
+# (b)
+# ?apriori
+rules <- apriori(bible, parameter = list(support = 0.01, confidence = 0.6, 
+	target = "rules", maxlen=5))
+summary(rules)
+
+library(arulesViz)
+
+plot(rules, method="graph", control=list(type="items"))
+```
+Support was assigned 0.01 ,confidence; 0.6 with maximum length of rule to be 5 producing 17 rules. 8 rules are of length 2 and 9 rules are of length 3.
+
+```{r} 
+# (c)
+#rules.by.confidence = sort(rules,by="confidence",decreasing = T)
+inspect(head(rules,n=5,by="confidence"))
+
+```
+Yes, it makes sense in the context because, person using words shalt, thee, thy for your in a certain dialect also tend to use word thou for your.
+
+```{r}
+# (d)
+inspect(head(rules,n=5,by="lift"))
+```
+For all the rules, when sorted by lift, have lift greater then 1, meaning that the lhs and rhs of the rules have positive relation and chances of using them together also increases. Somehow, lhs and rhs of the rules are also realted words.
+
+```{r}
+# (e)
+
+interestMeasure(head(rules,n=5,by="lift"), c( "conviction"),
+                transactions = bible)
+
+```
+In association rule with confidence and lift the directionality of the rules can't be distinguished. With conviction, directions of the rules matter.The conviction infinite means the confidence of the rule is 1. We have two rules with infinity and other three are greater then 1, meaning rhs of the rules is depending on lhs of the rule. 

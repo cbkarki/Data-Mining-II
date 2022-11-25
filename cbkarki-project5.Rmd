@@ -1,0 +1,452 @@
+---
+title: "Project-5"
+author:
+- Chitra Karki^[cbkarki@miners.utep.edu]
+- University of Texas at El Paso (UTEP)
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    keep_tex: yes
+    fig_caption: yes
+    latex_engine: pdflatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
+geometry: margin=1in
+fontsize: 11pt
+spacing: single
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb}
+- \usepackage{amsfonts}
+- \usepackage{amsthm}
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- "\\rhead{STAT 5494-- Statistical Machine Learning}"
+- \cfoot{\thepage}
+- \usepackage{algorithm}
+- \usepackage[noend]{algpseudocode}
+- \usepackage{xcolor}
+editor_options: 
+  chunk_output_type: console
+---
+
+\noindent
+
+\rule{17.5cm}{0.8pt}
+
+We consider a data set jaws.txt, which is concerned about the association between jaw bone length (y = bone) and age in deer (x = age). We are going try out several parametric/nonparametric
+
+nonlinear regression models in this low-dimensional (p = 1) setting.
+
+\section{Reading Data}
+
+Bring in the data D and make a scatterplot of bone vs. age. Optionally, add a linear fit and a nonlinear fit (with, e.g., lowess or loess) and inspect their discrepancy. Does their association look linear?
+
+```{r}
+setwd("C:/Users/chitr/OneDrive - University of Texas at El Paso/data_science/semesters/sem3-fall2022/datamining-dr.su/computer projects/project-5")
+
+D = read.table("jaws.txt",header = T)
+
+
+# plot bone Vs age
+
+lin.fit = lm(bone~age,data = D)
+plot(y=D$bone,x=D$age,xlab = "Age",ylab="Bone")
+abline(lin.fit,col="blue")
+# non-linear (lowess/loess)
+lines(lowess(y=D$bone,x=D$age),col="red")
+legend('bottomright',
+       col = c('blue', 'red'),
+       lwd = 2,
+       c('linear fit', 'non-linear fit'),bty = "n")
+
+
+plot(y = lin.fit$residuals,x=lin.fit$fitted.values,
+     xlab="Fitted values",ylab = "Residuls",main = "Residuals vs fitted")
+abline(h=0)
+
+
+```
+
+\textbf{Comment:} The association does not look linear. If we look at the linear fit, its observed that the fitted line do not fit well with the data points.The lowess fit with the default setting shows its polynomial with some degree which somehow follow the pattern of the data points. Also, the residuals vs fitted values plots shows the linear fit didn't do a good job, the pattern is non-linear.
+
+```{=tex}
+\section {Data partitioning}
+\begin {itemize}
+    \item[(a)]
+    Randomly partition the data D into the training set D1 and the test set D2 with a ratio of approximately 2:1 on the sample size.
+    \item[(b)]
+    To prevent extrapolation when it comes to prediction, the range of age in the test set D2 should not exceed that in the training set D1: Find the (two) observations with minimum and maximum age in data D and force them to go to the training set D1 if they are not
+in D1.
+\end{itemize}
+```
+
+```{r}
+# 2(a)
+# partitioning data
+set.seed(123)
+d1.index = sample(1:nrow(D),size =(2/3)*nrow(D))
+if (!which(D$age==max(D$age)) %in% d1.index){
+        d1.index = c(d1.index,which(D$age==max(D$age)))
+} 
+
+if (!which(D$age==min(D$age)) %in% d1.index) {
+        d1.index = c(d1.index,which(D$age==min(D$age)))
+    
+}
+D1 = D[d1.index,]
+D2 = D[-d1.index,]
+
+# ordering based on age
+D1 = D1[order(D1$age),]
+D2 = D2[order(D2$age),]
+age = D1[,1]
+bone = D1[,2]
+
+# 2(b)
+# checking min max
+# range(D$age);range(D1$age);range(D2$age)
+# 
+# sum(D$age==max(D$age)) # the occurance of max age is only once
+# sum(D$age==min(D$age))
+# 
+# # forcing observation  with max and min age of D if present in D2 to D1
+# d1.index = c(d1.index,which(D$age==max(D$age) | D$age==min(D$age)))
+# D1 = D[d1.index,]
+# D2 = D[-d1.index,]
+# 
+# # checking if its ok now
+range(D$age);range(D1$age);range(D2$age)
+```
+
+\textbf{Comment:} Data set was randomly splited into training and the testing sets. The observation having min and the max ages were forced to move in training set.
+
+\section {Parametric non-linear models}
+
+First consider parametric nonlinear models.
+
+```{=tex}
+\begin {itemize}
+    \item[(a)] 
+    Fit an asymptotic exponential model of the following form \newline
+\[
+y = \beta_1 - \beta_2e^{-\beta_3x} + \epsilon \tag{1}
+\] 
+with the training set D1: Provide a summary of the fitted model and interpret the results.
+    \item[(b)]
+    To test $H_0$ : $\beta_1$ = $\beta_2$ in Model (1), fit the reduced model, i.e., the model by plugging in the condition under $H_0$ and use the anova function. Also, compare two \textbf{nls} models with AIC/BIC. Then conclude on which model is better.
+    \item [(c)]
+    Based on the better model in 2(b), add the fitted curve to the scatterplot.
+    \item [(d)]
+    Apply the better model in 2(b) to the test set D2. Plot the observed $y_i$ values in D2 versus their predicted values $\hat{y}_i$, together with the reference line $y = x$, to check if the prediction seems reasonable. And computer the prediction mean square error (MSE) \newline
+    \[
+    MSE = \frac{1}{\lvert D \rvert} \sum_{i\in D_2}(y_i - \hat{y}_i)
+    \]
+    
+\end{itemize}
+```
+
+
+```{r}
+# (a)
+
+#testing for initialization for which the pattern of the scatter plot is matched somehow.
+# asy.exp = function(x,beta1,beta2,beta3){
+#   y = beta1 - beta2*(exp(-beta3*x))
+# }
+# 
+# 
+# plot(asy.exp(1:40,1,1,0.12))
+#attach(D1)
+jaw.mod <- nls(bone ~ beta1 - beta2*(exp(-beta3*age)), 
+    start=list(beta1 = 1, beta2 = 1, beta3 =0.12), trace=T)
+summary(jaw.mod)
+
+```
+
+\textbf{Comment:} The coefficients were initialized at [1,1,0.12] for beta1,beta2 and beta3 respectively. The initialization values were obtained from some hit and trails,specially on beta3. They converged to the values, [120.1008 108.4289 0.08832346] in 10 iterations. From summary of the model,the coefficients seems significant.
+
+```{r message=FALSE, warning=FALSE}
+#(b)
+
+# asy.exp = function(x,beta1,beta3){
+#    y = beta1 - beta1*(exp(-beta3*x))
+#  }
+# plot(asy.exp(1:40,0.10,0.12))
+
+jaw.mod.red <- nls(bone ~ beta1*(1-(exp(-beta3*age))), 
+    start=list(beta1 = 1, beta3 =0.12), trace=T)
+summary(jaw.mod.red)
+
+```
+
+The model was reduced as suggested by the null hypothesis. The modeling non-linear function is now, $\hat{y} = \beta_1(1 - e^{\beta_3x})$ with two coefficients. The coefficients converged to the values (117.0201 0.1096543) for beta1 and beta2 respectively in 8 iterations. Summary of the reduced model shows, the coefficients are significant.
+
+```{r}
+# comparison of models
+
+# anova
+anova(jaw.mod,jaw.mod.red)
+# AIC/BIC
+AIC(jaw.mod);AIC(jaw.mod.red)
+BIC(jaw.mod);BIC(jaw.mod.red)
+
+
+```
+
+\textbf{Comment:} on comparing these 2 models, AIC/BIC and MSE for jaw.mod.red has lesser values then jaw.mod model. Hence, based on these criterion, reduced model is better. But, these two models are comparable, results are close to each other.
+
+```{r}
+#plots fitted curve
+par(mfrow=c(1,1))
+plot(y=bone,x=age,xlab = "Age",ylab="Bone",main = "full vs reduced")
+lines(x=age, y=fitted.values(jaw.mod), lwd=2, col="red")
+lines(x=age, y=fitted.values(jaw.mod.red), lwd=2, col="blue")
+legend('bottomright',
+       col = c('blue', 'red'),
+       lwd = 2,
+       c('reduced model', 'full-model'),bty = "n")
+
+# plots of residuals
+par(mfrow=c(1,2))
+plot(x=fitted.values(jaw.mod), y=residuals(jaw.mod), type='b',
+     main = "full model",xlab = "fitted.values",ylab = "residuals")
+abline(h=0, lty=2)
+
+plot(x=fitted.values(jaw.mod.red), y=residuals(jaw.mod.red), type='b',
+     main = "reduced model",xlab = "fitted.values",ylab = "residuals")
+abline(h=0, lty=2)
+par(mfrow=c(1,1))
+
+```
+
+\textbf{Comment:} The fitted curves for both the models seems to follow the pattern of the data points. The fitted curves for both the models are difficult to distinguish, as there is a small difference in the models. The residuals vs fitted values shows patters. For good models the distribution of the residuals should be random with respect to the fitted curve.
+
+```{r}
+# (d) 
+#prediction on model jaw.mod.red
+
+y.hat = predict(jaw.mod.red,newdata = data.frame(age=D2$age))
+plot(x = y.hat,y=D2$bone,xlab = "predicted",ylab = "observed",main = "reduced model")
+abline(a=0,b=1)
+
+# MSE
+# MSE for reduced model
+jaw.mod.red.MSE = mean((bone - predict(jaw.mod.red))^2);jaw.mod.red.MSE
+```
+
+\textbf{Comment:} The observed vs predicted values plot for the model jaw.mod.red shows that the points are not in close agreement with y=x line. so it didn't performed well.And MSE is 141.8087.
+
+
+\section {Local regression methods}
+Next consider local regression methods.
+  \begin {itemize}
+    \item[(a)]
+    On basis of D1; obtain a KNN regression model with your choice of K. Plot the fitted
+curve together with the scatterplot of the data. Apply the fitted model to D2. Plot the
+observed and predicted response values with reference line y = x and obtain the prediction
+MSE.
+    \item[(b)]
+    Apply kernel regression to obtain a nonlinear fit. State your choice of the kernel function
+and the choice of your bandwidth. Explain how you decide on the choices of kernel and
+bandwidth. Apply the fitted kernel regression model to the test data D2. Plot the observed
+and predicted response values with reference line y = x and obtain the prediction MSE.
+
+  \item[(c)]
+    Apply local (cubic) polynomial regression to the training data D1: Again, state your choice
+of the kernel function and the bandwidth used. Apply the local cubic regression model
+to the test data D2. Plot the observed and predicted response values with reference line
+y = x and obtain the prediction MSE.
+\end{itemize}
+
+```{r}
+# (a)
+# V-FOLD CV FOR SELECTING K
+library("FNN")
+set.seed(123)
+V <- 3; n <- NROW(D1)
+id.fold <- sample(x=1:V, size=n, replace=TRUE) 
+K <- 2:5; SSE <- rep(0, length(K))
+for (k in 1:length(K)){
+	for (v in 1:V){
+		train.v <- D1[id.fold!=v,]; 
+		test.v <- D1[id.fold==v,]
+		yhat <- knn.reg(train=train.v, test=test.v, y=train.v$bone, k=K[k])$pred;
+		SSE[k] <- SSE[k] + sum((test.v$bone-yhat)^2) 
+	}
+}
+cbind(K, SSE/n)
+par(mfrow=c(1, 1), mar=rep(4,4))
+plot(K, SSE/n, col="blue", pch=19, cex=.8, type="b", xlab='k in KNN', 
+	ylab="MSE via CV", lwd=1.5)
+
+ k.opt <- K[which.min(SSE)] ;k.opt
+
+
+# fitting knn with optimal K neighbours
+fit.knn <- knn.reg(train=age, y=bone, k=k.opt, algorithm="kd_tree");
+par(mfrow=c(1, 2), mar=rep(4,4))
+plot(y=bone, x=age, xlab="age", ylab="bone", 
+	col="red", pch=15, cex=0.8,main="Knn regression")
+lines(x=age, y=fit.knn$pred, col="blue", lwd=2)
+# PREDICTED VS. OBSERVED
+plot(x=bone, y=fit.knn$pred, col="blue", pch=19, 
+	xlab="y", ylab=expression(hat(y)), cex=0.8,main="predicted vs observed, training set")
+abline(a=0, b=1, col="green", lty=1, lwd=2)
+
+# MAKING PREDICTION on test data D2
+fit.knn <- knn.reg(train=D1, test=D2, y=D1$bone, k=k.opt, algorithm="kd_tree");
+plot(x=D2$bone, y=fit.knn$pred, col="blue", pch=19, 
+	xlab="y", ylab=expression(hat(y)), cex=0.8,main="predicted vs observed, test set")
+abline(a=0, b=1, col="green", lty=1, lwd=2)
+
+# prediction MSE 
+fit.knn.MSE = mean((fit.knn$pred-D2$bone)^2);fit.knn.MSE
+
+```
+
+\textbf{Comment:} The optimum neighbour(2) was obtained through cross validation.The fitted curve followed the pattern of the data points but its wiggly. The MSE is 6.197896
+
+```{r example from wev, eval=FALSE, include=FALSE}
+#example for web, for understanding
+# https://towardsdatascience.com/kernel-regression-made-easy-to-understand-86caf2d2b844
+#Kernel regression
+data <- data.frame(Area = c(11,22,33,44,50,56,67,70,78,89,90,100),        
+              RiverFlow = c(2337,2750,2301,2500,1700,2100,1100,1750,1000,1642, 2000,1932))                                 
+
+x <- data$Area
+y <- data$RiverFlow
+#function to calculate Gaussian kernel
+gausinKernel <- function(x,b){
+  K <- (1/((sqrt(2*pi))))*exp(-0.5 *(x/b)^2)
+  return(K)
+}
+b <- 10 #bandwidth
+kdeEstimateyX <- seq(5,110,1)
+ykernel <- NULL
+for(xesti in kdeEstimateyX){
+  xx <-  xesti - x
+  K <-gausinKernel(xx,b)
+  Ksum <- sum(K)
+  weight <- K/Ksum
+  yk <- sum(weight*y)
+  xkyk <- c(xesti,yk)
+  ykernel <- rbind(ykernel,xkyk)
+}
+plot(x,y,xlab = "Area", ylab = "Flow", col = 'blue', cex = 2)
+lines(ykernel[,1],ykernel[,2], col = 'red', lwd = 2)
+
+```
+
+```{r}
+# (b) kernel regression
+library("npregfast")
+fit.ker.reg <- frfast(bone ~ age, data = D1, seed = 130853, 
+	smooth = "kernel", kernel = "epanech", p = 3)
+autoplot(fit.ker.reg, der = 0,pcol = "black",main = "kernel regression")
+
+y.hat = predict(fit.ker.reg,newdata = D2)
+plot(x=D2$bone,y.hat$Estimation[,1]);abline(a=0,b=1)
+
+# plot(x=age,y=bone)
+# lines(x=seq(0,50,length.out=16),y=y.hat$Estimation[,1],col="blue")
+# lines(x=seq(0,50,length.out=16),y=y.hat$Estimation[,2],col="red")
+# lines(x=seq(0,50,length.out=16),y=y.hat$Estimation[,3],col="red")
+
+
+fit.ker.reg.MSE = mean((y.hat$Estimation[,1]-D2$bone)^2);fit.ker.reg.MSE
+
+```
+
+\textbf{Comment:} The Epanechnikov kernel was choose for the kernel regression,as it has a good approximation. Bandwidth was automatically picked by the the function frfast which is  0.72. The mse is 227.7729. Still some points are out of the confidence interval of the fitted curve.
+
+```{r}
+#c
+#LOCAL POLYNOMIAL REGRESSION
+
+ library(KernSmooth)
+# help(package="KernSmooth")
+# plot(x=age, y=bone, xlab="age", ylab="bone",main = "local-GaussKernal reg")
+ h <- dpill(age, bone)   # BANDWIDTH SELECTION (direct plug-in) FOR Gaussian kernel 
+# fit <- locpoly(age, bone, drv = 0L, degree=3, 
+#                kernel = "normal", bandwidth = h) # local linear Gaussian kernel regression
+# lines(fit, col="red", lwd=2)
+
+h <- dpill(age, bone) # BANDWIDTH SELECTION
+library(locpol)
+r <- locpol(bone~age, data=D1, deg=3, kernel=gaussK,bw=h)
+plot(r,which = c(1,4))
+
+
+r.pred = locpol(bone~age,data = D1,deg = 3,kernel = gaussK,bw=h,xeval = D2$age)
+plot(y = D2$bone,x=fitted(r.pred),xlab="observed",ylab = "predicted");abline(a=0,b=1)
+r.MSE=mean((D2$bone-fitted(r.pred))^2);r.MSE
+#predict(fit,newdata=data.frame(age=D2$age))
+
+```
+\textbf{Comment:} Gaussian kernal was used. The bandwith was picked by the dpill function, which is 2.96. The MSE is 293.9948.
+
+\section {Regression/smoothing splines}
+Finally, regression/smoothing splines are applied.
+  \begin{itemize}
+    \item[(a)]
+    Apply regression splines (e.g., natural cubic splines) to model the training data D1: Plot the resultant curve. Then use the fitted model to predict the test data D2. Plot the
+observed and predicted response values and obtain the prediction MSE on D2.
+    \item[(b)]
+    Apply smoothing splines to D1: Always specify the choice of your kernel function and comment on how you determine the tuning parameter. Add the resultant curve to the scatterplot. Then apply the fitted model to the test data D2. Plot the observed and predicted response values and obtain the prediction MSE.
+\end{itemize}
+
+```{r}
+# (a)
+library("splines")
+#ns(D1$age, df = 5)
+summary(fm1 <- lm(bone ~ ns(age, df = 5), data = D1))
+
+par(mfrow=c(1,1))
+plot(bone~age, data=D1, xlab = "age", ylab = "bone", 
+     main="Natural Cubic Splines")
+spd <- seq(min(bone), max(age), len = 38)
+lines(spd, predict(fm1, data.frame(age=spd)), lty=1, col=2)
+abline(v=c(7.658201, 20.476077, 29.825635, 39.926965),lty = 2)
+
+ns.pred = predict(fm1,data.frame(age=D2$age))
+ns.MSE = mean((ns.pred-D2$bone)^2);ns.MSE
+
+```
+\textbf{Comment:} The prediction MSE is 240.3677.
+
+```{r}
+# (b)
+fit.spl <- smooth.spline(age, bone, cv = FALSE); # Cv=F: GCV by default 
+plot(x=age, y = bone, main = "Smoothing Splines")
+lines(fit.spl)
+#df opt 
+fit.spl$df
+
+
+spl.pred = predict(fit.spl,x=D2$age)$y
+plot(x=D2$bone,y=spl.pred,xlab = "observed",ylab = "preidcted")
+abline(a=0,b=1)
+spl.MSE = mean((D2$bone - spl.pred )^2);spl.MSE
+```
+\textbf{Comment:} Natural cubic basis were used. The prediction MSE is 232.0398.
+
+ 
+ \section{MSE measures} 
+ Tabulate all the prediction MSE measures. Which methods give favorable results?
+ 
+```{r}
+# Table for all the MSEs.
+Models = c("asym-exp -red","KNN","Kernal Reg","cubic local-reg","regsplines-NC","smoothing")
+
+mse = c(jaw.mod.red.MSE, fit.knn.MSE,fit.ker.reg.MSE,r.MSE,ns.MSE,spl.MSE)
+
+data.frame(Model=Models,MSE=round(mse,4))
+```
+\textbf{Comment:} The prediction MSE for KNN regression is the lowest among the models we constricted. For this model, predicted vs observed plot has points pretty close to y=x line. So, we can say this model works well for prediction among the others based on MSE criterion.  

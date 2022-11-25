@@ -1,0 +1,415 @@
+---
+title: "Project-2"
+author:
+- Chitra Karki^[cbkarki@miners.utep.edu]
+- University of Texas at El Paso (UTEP)
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    keep_tex: yes
+    fig_caption: yes
+    latex_engine: pdflatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
+geometry: margin=1in
+fontsize: 11pt
+spacing: single
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb}
+- \usepackage{amsfonts}
+- \usepackage{amsthm}
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- "\\rhead{STAT 5494-- Statistical Machine Learning}"
+- \cfoot{\thepage}
+- \usepackage{algorithm}
+- \usepackage[noend]{algpseudocode}
+editor_options: 
+  chunk_output_type: console
+---
+
+\noindent
+
+\rule{17.5cm}{0.8pt}
+
+\section{Import the data}
+Bring in the data. Remove the first three columns, which are ID variables. Change the value
+0 to -1 for Class since we will experiment with a logistic model with +or-1 valued responses.
+
+```{r}
+#setwd("C:/Users/chitr/OneDrive - University of Texas at El Paso/data_science/semesters/sem3-fall2022/datamining-dr.su/computer projects/project-2")
+dat = read.csv(file = "Shill Bidding Dataset.csv",header = T)
+
+# removing first three columns
+head(dat)
+dim(dat) # 6321 rows, 13 colmns
+names(dat)
+
+# removing first three columns
+dat = dat[,-c(1:3)]
+dim(dat); names(dat) # 6321 rows, 10 cols
+
+# changing 0 to -1 for class variable
+table(dat$Class)
+dat$Class = ifelse(dat$Class==0,-1,1)
+table(dat$Class)
+```
+
+\section {Exploratory Data Analysis (EDA)} 
+Perform some simple EDA to gain insight of the data.Specifically,
+
+\begin {itemize} 
+\item[(a)] Compute the number of distinct levels or values for each variable. Are there any categorical variable or numerical variable that has only a few distinct values?
+\item[(b)] Are there any missing data? If so, deal with them with an imputation or list wise deletion
+accordingly. Document your steps carefully.
+\item[(c)] Make a parallel boxplot of the data to view the predictors or attributes in the data.
+Inspect whether they have the same range and variation. This helps us to determine
+whether scaling is necessary for some modeling approaches.
+\item[(d)] Make a bar plot of the binary response Class. Do we seem to have an unbalanced
+classification problem?
+\end{itemize}
+
+```{r "2a"}
+# 2a
+str(dat)
+
+# # ploting histograms
+# par(mfrow = c(2,5))
+xlab = names(dat)
+nc = ncol(dat)
+# for (i in 1:nc) {
+#   hist(dat[,i],xlab = paste(xlab[i]),ylab = "freq",main = paste())
+#   
+# }
+
+
+#suppressPackageStartupMessages(library("dplyr"))
+# getting varibles with less then 10 unique values 
+for (i in 1:nc) {
+  if (length(unique(dat[,i])) < 10) {
+        hist(dat[,i],xlab = paste(xlab[i]),
+         main=paste("histogram of ",xlab[i]))
+    
+    print(paste("table of variable", xlab[i]))
+    print(table(dat[,i]))
+    
+    print(paste("The variable",xlab[i],"has",length(unique(dat[,i])), 
+                "distinct values" ))
+  }
+}
+
+```
+
+The details of the variables with their corresponding distinct values are mentioned above along with the histogram plots. 
+
+```{r "2b"}
+# 2b
+sum(is.na(dat))
+```
+There are no missing values.
+
+```{r "2c"}
+# 2c
+# box plots of predictor variables
+par(mar=c(10,2,2,2))
+boxplot(dat[,-nc],las=2)
+
+```
+The Auction_duration variable has media, which is higher then the other variables. 
+
+```{r "2d"}
+# 2d
+barplot(dat$Class)
+
+table(dat$Class)
+675/nrow(dat);5646/nrow(dat)
+
+plot(as.factor(dat$Class))
+```
+Form the barplot and the percentage calculation, it is observed that, +1 has around 10.67% and -1 has 89.32 %. 
+
+\section {Data Partitioning} Partition the data D into three sets: the training data D1, the validation
+data D2, and the test data D3 with a ratio approximately of 2:1:1.
+```{r}
+index = 1:nrow(dat)
+
+# d1
+d1.index = sample(index,(1/2)*nrow(dat))
+d1 = dat[d1.index,]
+
+# d2
+d2.index = sample(index[-d1.index],(1/4)*nrow(dat))
+d2 = dat[d2.index,]
+
+# d3
+d3 = dat[-c(d1.index,d2.index),]
+```
+
+\section {Logistic Regression – Optimization}
+Referring to class notes ‘Introduction to Optimization’
+and the R example, implement the logistic regression model by minimizing the negative loglikelihood function.
+
+\begin {itemize}
+\item[(a)] Pool the training data and the validation data together into D' = D1$\cup$D2. Based on
+D', obtain the maximum likelihood estimates (MLE) $\hat{\beta} = (\hat{\beta_j})$
+of regression parameters
+and their standard errors from the resultant Hessian matrix. Test the significance of each
+attribute and obtain the corresponding p-values. Tabulate the results. Also, specify the
+optimization method that you use in R function optim(), e.g., BFGS. Check to make sure
+that the algorithm converges by looking at the "convergence" value in the output, which
+should be 0 if success.
+
+\item[(b)] Compare your results in 4(a) with the fittting results from standard R function \textbf{glm()}.
+
+\item[(c)] Apply your trained logistic model in 4(a) to predict the response in the test data D3:
+Specifically, let X' denote the design matrix from the test data; don't forget to add the
+first column of all 1's. We have \newline
+$\hat{y}' = sig[\frac{exp(\textbf(X')\hat{\beta})}{1 + exp(\textbf(X')\hat{\beta})} - 0.5]$
+
+with the default threshold 0.5. Compute the prediction accuracy.
+\end{itemize}
+```{r}
+d.prime = rbind(d1,d2)
+
+# THE NEGATIVE LOGLIKEHOOD FUNCTION FOR Y=+1/-1
+# non-negative loglikihood
+nloglik <- function(beta, X, y){
+	if (length(unique(y)) !=2) stop("Are you sure you've got Binary Target?") 
+	X <- cbind(1, X)
+	nloglik <- sum(log(1+ exp(-y*X%*%beta)))
+	return(nloglik) 
+}
+```
+
+
+```{r}
+#Preparing data to run optim function 
+X <- as.matrix(d.prime[,-ncol(d.prime)])
+y = d.prime[,ncol(d.prime)]
+p <- NCOL(X) +1
+fit <- optim(par=rep(0,p), fn=nloglik, method="BFGS", X=X, y=y,hessian = T)
+beta.hat <- fit$par; beta.hat
+
+# convergence
+fit$convergence
+
+### The square roots of the diagonal elements of the inverse of the Hessian 
+#(or the negative Hessian , when minimizing Likelihood) are the estimated 
+#standard errors.
+
+vcov = solve(fit$hessian)
+# standard errors
+se.beta.hat = sqrt(diag(vcov)) ; se.beta.hat
+```
+
+The optimization algorithm connverged to 0.
+
+```{r}
+# 2(b)
+
+# testing the significance of each attributes
+# Wald"s test h0: beta = 0 not significant , h1: beta!=0
+# test statistic, Z = beta(i)/sd(beta(i))
+# use standard normal curve to determine p-values.
+
+z.beta.hat = beta.hat/se.beta.hat
+suppressPackageStartupMessages(library(scales))
+p.value = 2*pnorm(abs(z.beta.hat),lower.tail = F) # 2-tail test 
+decission = ifelse(p.value<0.05,"significant","not-significant")
+
+data.frame(beta.hat = paste("beta",0:(ncol(d.prime)-1)),
+           beta.hat = round(beta.hat,4), se.beta.hat=round(se.beta.hat,4),
+           z.beta.hat= round(z.beta.hat,4),p.value = scientific(p.value,4),
+           decission= decission)
+```
+
+
+```{r}
+y.prime.org = ifelse(d.prime$Class==-1,0,1)
+fit0 <- glm( y.prime.org~.,data=d.prime[,-ncol(d.prime)],
+             family=binomial(link = 'logit'))
+summary(fit0)
+```
+
+The results for optimization algorithm and the glm() function are comparable, which can be observed from table and the summary of glm fit above. The significant attributes are the same from these two procedures.
+
+```{r}
+# 2(c) 
+
+x.prime = data.frame(Intercept=rep(1,nrow(d3)),d3[,-ncol(d3)])
+
+predict.opt = function(x,beta) {
+  x = as.matrix(x)
+  y.hat = sign(exp(x%*%beta)/(1 + exp(x%*%beta))-0.5)
+  return(y.hat)
+}
+
+y.hat = predict.opt(x.prime,beta.hat)
+
+
+#confusion matrix
+table(y.hat,d3[,ncol(d3)])
+
+#accuracy
+sum(y.hat == d3[,ncol(d3)])/nrow(d3)
+
+
+#table(y.hat)
+
+```
+
+The accuracy of the model is 0.9784946. Meaning that for approximately 98 percentage of the times it predicted positive for positive and negative for negative in testing data set. 
+
+```{r eval=FALSE, include=FALSE}
+# prediction accuracy
+suppressPackageStartupMessages(library(verification))
+
+#changing -1 levels to 0 for roc area computation
+y.hat.roc = as.vector(ifelse(y.hat==-1,0,1))
+y.obs.roc = ifelse(d3[,ncol(d3)]==-1,0,1)
+
+a.ROC <- roc.area(obs=y.obs.roc, pred=y.hat.roc)$A
+print(a.ROC)
+
+# AUC
+suppressPackageStartupMessages(library(cvAUC))
+AUC <- ci.cvAUC(predictions=y.hat.roc, labels=y.obs.roc, folds=1:NROW(d3), confidence=0.95); AUC
+auc.ci <- round(AUC$ci, digits=3);auc.ci
+
+# plot Roc
+suppressPackageStartupMessages(library(verification))
+mod.glm <- verify(obs=y.obs.roc, pred=y.hat.roc)
+roc.plot(mod.glm, plot.thres = NULL)
+text(x=0.4, y=0.1, paste("Area under ROC =", round(AUC$cvAUC, digits=3),
+"with 95% CI (", auc.ci[1], ",", auc.ci[2], ").",
+sep=" "), col="blue", cex=1.2)
+
+
+# simple confussion
+#install.packages("caret")
+suppressPackageStartupMessages(library(caret))
+confusionMatrix(data=as.factor(y.hat.roc),reference = as.factor(y.obs.roc))
+
+```
+
+
+\section {Primitive LDA-The kernel trick}
+
+```{r}
+# (a)
+x1 = d1[,-ncol(d1)];
+x1.y = d1[,ncol(d1)]
+
+x2 = d2[,-ncol(d2)]
+x2.y = d2[,ncol(d2)]
+
+x3 = d3[,-ncol(d3)]
+x3.y = d3[,ncol(d3)]
+
+# scaling x1
+x1.mean = as.vector(apply(x1, 2, mean))
+x1.sd = as.vector(apply(x1,2, sd))
+
+x1.scaled = scale(x1,center = x1.mean,scale = x1.sd)
+
+# scaling x2
+
+x2.scaled = scale(x2,center = x1.mean,scale = x1.sd)
+
+
+```
+
+```{r}
+# (b) training kernel and tunning sigma for rbf kernel
+library("kernlab")
+
+sigma = seq(0,10,length.out = 50)
+
+pred.acc = NULL
+for(i in 1:length(sigma)) {
+
+#initialization kernel
+kernel.class = rbfdot(sigma = sigma[i])
+
+# linear classifier y = sgn(wz+b)
+wz.plus = colMeans(kernelMatrix(kernel = kernel.class,
+                           x=as.matrix(x1.scaled[which(x1.y==1),]),
+                           y = as.matrix(x2.scaled)))
+  
+wz.minus =  colMeans(kernelMatrix(kernel = kernel.class,
+                           x=as.matrix(x1.scaled[which(x1.y==-1),]),
+                           y = as.matrix(x2.scaled)))
+
+wz = wz.plus - wz.minus
+b = (mean(kernelMatrix(kernel = kernel.class,
+                           x=as.matrix(x1.scaled[which(x1.y==1),]),
+                       y = as.matrix(x1.scaled[which(x1.y==1),]))) - 
+       mean(kernelMatrix(kernel = kernel.class,
+                           x=as.matrix(x1.scaled[which(x1.y==-1),]),
+                           y = as.matrix(x1.scaled[which(x1.y==-1),])))) * 0.5
+
+y.hat = sign(wz+b)
+pred.acc[i] = mean(y.hat == x2.y)
+
+print(paste("prediction acurracy for",round(sigma[i],4),":",
+            round(pred.acc[i],4)))
+}
+
+plot(y=pred.acc,x=sigma,pch=19);
+abline(v=sigma[which(pred.acc==max(pred.acc))],col="red")
+abline(v= 4.898)
+
+# sigma which has maximum prediction accuracy
+sigma[which(pred.acc==max(pred.acc))]
+```
+
+The tuning parameter for sigma in rbf kernel function was set between 0 to 10 in a step size of 0.2041. The maximum prediction accuracy was produced by the sigma(0.2040816) with accuracy 0.9949. After sigma(4.898) the accuracy started decreasing in a faster rate. 
+
+
+```{r}
+#(c)
+d.prime = rbind(d1,d2)
+X.prime = d.prime[,-ncol(d.prime)]
+X.prime.mean = colMeans(X.prime)
+X.prime.sd = apply(X.prime, 2,sd)
+
+# scaling 
+X.prime.scaled = scale(X.prime,center = X.prime.mean,scale = X.prime.sd)
+
+X3.scaled = scale(d3[,-ncol(d3)],center = X.prime.mean,scale = X.prime.sd )
+
+# prediction on d3 based on the best kernel in 5c
+kernel.class = rbfdot(sigma = sigma[which(pred.acc==max(pred.acc))])
+
+# linear classifier y = sgn(wz+b)
+wz.plus = colMeans(kernelMatrix(kernel = kernel.class,
+            x=as.matrix(X.prime.scaled[which(d.prime[,ncol(d.prime)]==1),]),
+            y = as.matrix(X3.scaled)))
+  
+wz.minus =  colMeans(kernelMatrix(kernel = kernel.class,
+            x=as.matrix(X.prime.scaled[which(d.prime[,ncol(d.prime)]==-1),]),
+            y = as.matrix(X3.scaled)))
+
+wz = wz.plus - wz.minus
+b = (mean(kernelMatrix(kernel = kernel.class,
+              x=as.matrix(X.prime.scaled[which(d.prime[,ncol(d.prime)]==1),]),
+           y = as.matrix(X.prime.scaled[which(d.prime[,ncol(d.prime)]==1),]))) -
+       mean(kernelMatrix(kernel = kernel.class,
+x=as.matrix(X.prime.scaled[which(d.prime[,ncol(d.prime)]==-1),]),
+y = as.matrix(X.prime.scaled[which(d.prime[,ncol(d.prime)]==-1),])))) * 0.5
+
+y.hat = sign(wz+b)
+
+# prediction accuracy
+mean(y.hat == d3[,ncol(d3)])
+
+```
+
+The prediction accuracy on the testing set is 0.970272. The value of the sigma was tuned from 5b.

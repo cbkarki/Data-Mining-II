@@ -1,0 +1,224 @@
+---
+title: "Project-4"
+author:
+- Chitra Karki^[cbkarki@miners.utep.edu]
+- University of Texas at El Paso (UTEP)
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    keep_tex: yes
+    fig_caption: yes
+    latex_engine: pdflatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
+geometry: margin=1in
+fontsize: 11pt
+spacing: single
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb}
+- \usepackage{amsfonts}
+- \usepackage{amsthm}
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- "\\rhead{STAT 5494-- Statistical Machine Learning}"
+- \cfoot{\thepage}
+- \usepackage{algorithm}
+- \usepackage[noend]{algpseudocode}
+- \usepackage{xcolor}
+editor_options: 
+  chunk_output_type: console
+---
+
+\noindent
+
+\rule{17.5cm}{0.8pt}
+\section {PageRank} 
+Based on the links in Figure 1,
+\begin {itemize}
+  \item[(a)] Obtain the link matrix L and input it into R.
+  \item[(b)] Reproduce the graph similar to Figure 1 to check if you have got the right link matrix L.
+  \item[(c)] Compute the PageRank score for each webpage. Provide a barplot of the PageRank score. Which pages come to the top-3 list? Discuss the results.
+\end {itemize}
+  
+```{r}
+# setting working directory
+setwd("C:/Users/chitr/OneDrive - University of Texas at El Paso/data_science/semesters/sem3-fall2022/datamining-dr.su/computer projects/project-4")
+
+```
+
+```{r}
+# (a)
+L <- matrix(c(0, 1, 0, 0, 0, 0, 0,
+              0, 0, 0, 1, 1, 0, 0,
+              1, 0, 0, 0, 0, 1, 0,
+              1, 0, 1, 0, 1, 1, 0,
+              0, 0, 0, 1, 0, 0, 0,
+              0, 0, 0, 0, 0, 0, 0,
+              0, 0, 0, 0, 1, 1, 0),
+            ncol=7,byrow=T)
+
+
+colnames(L) = LETTERS[1:7]
+rownames(L) = colnames(L)
+
+library(igraph)
+graph <- graph_from_adjacency_matrix(t(L))   
+par(mfrow=c(1,1), mar=rep(4,4))
+plot(graph)
+
+# PAGERANK
+rank0 <- page.rank(graph)$vector;rank0
+names(rank0) <- colnames(L)
+par(mfrow=c(1,1), mar=rep(4,4))
+barplot(sort(rank0,decreasing = T), col="lavender", xlab="webpage", 
+        ylab="PageRank", main="PageRank")
+
+```
+
+The graph was regenerated. The top three high ranked pages are "D", "A", and "B". According to the algorithm, they will get bigger weights as their inward links are more than the out going links.
+  
+\section {Anomaly Detection}
+We consider the HTP (high tech part) data available from R Package
+ICSOutlier. This data set contains the results of p = 88 numerical tests for n = 902 high-tech parts. Based on these results the producer considered all parts functional and all of them were sold. However two parts, 581 and 619, showed defects in use and were returned to the manufacturer. These two observations can thus be considered as outliers and the objective is to detect them by re-examining the test data.
+
+\begin {itemize}
+  \item[(a)] Bring in the data with the following R code \newline
+  install.packages("ICSOutlier")\newline
+library("ICSOutlier")\newline
+data(HTP)\newline
+dat <- HTP; dim(dat); head(dat)\newline
+outliers.true <- c(581, 619)\newline
+
+  \item[(b)] 
+  First obtain robust estimates of the mean vector $\hat{\mu}$ and the VCOV matrix $\hat{\sum}$
+of the data with MCD with a breakdown point of your choice. Then compute the robust Mahalanobis distance of each observation with repect to the MCD estimates ($\hat{\mu}$;$\hat{\sum}$) and plot them. You may add a threshold based on the $\chi^2(p)$ distribution and highlight the two defective parts.
+Are the two defective parts in your top list of potential outliers?
+
+  \item[(c)]
+    Apply isolation forest (iForest), local outlier factor (LOF), and, optionally,        one-class SVM for the same task. Choose the involved parameters appropriately based on your own judgment and you may compare results by varying the parameters. Plot the results.Comment on the similarities and differences of their results. In particular, pay attention
+to whether the two defective parts are deemed anomalies by each method.
+
+\end{itemize}
+
+```{r}
+# (a)
+#install.packages("ICSOutlier")
+library("ICSOutlier")
+data(HTP)
+dat <- HTP; dim(dat); # head(dat)
+#outliers.true <- c(581, 619)
+```
+
+
+```{r}
+# (b)
+library(robustbase)
+
+# Obtain MCD estimates with a breakdown point of 25%
+fit.robust <- covMcd(dat, cor = FALSE, alpha = 0.75)
+
+# Robust (Squared) Mahalanobis distance with MCD/MVE results
+RD <- mahalanobis(dat, fit.robust$center, fit.robust$cov)
+
+
+
+# Cut-off based on the chi-square distribution
+cutoff.chi.sq <- qchisq(0.975, df = ncol(dat)); cutoff.chi.sq
+which(RD >= cutoff.chi.sq)
+
+# Another Cut-off Suggested by Green and Martin (2017)
+# install.packages("CerioliOutlierDetection")
+n <- nrow(dat); p <- ncol(dat)
+library("CerioliOutlierDetection")
+cutoff.GM <- hr05CutoffMvnormal(n.obs = n, p.dim=p, mcd.alpha = 0.75,
+	signif.alpha = 0.025, method = "GM14",
+	use.consistency.correction = TRUE)$cutoff.asy
+cutoff.GM 
+
+
+which(RD >= cutoff.GM)  # OUTLIER IDs
+
+# PLOT THE RESULTS
+par(mfrow=c(1,1), mar=rep(4,4))
+colPoints <- ifelse(RD >= min(c(cutoff.chi.sq, cutoff.GM)), 1, grey(0.5))
+pchPoints <- ifelse(RD >= min(c(cutoff.chi.sq, cutoff.GM)), 16, 4)
+plot(seq_along(RD), RD, pch = pchPoints, col = colPoints,
+	ylim=c(0, max(RD, cutoff.chi.sq, cutoff.GM) + 2), cex.axis = 0.7, cex.lab = 0.7,
+	ylab = expression(RD**2), xlab = "Observation Number")
+abline(h = c(cutoff.chi.sq, cutoff.GM), lty = c("dashed", "dotted"), col=c("blue", "red"))
+legend("topleft", lty = c("dashed", "dotted"), cex = 0.7, ncol = 2, bty = "n",
+	legend = c(expression(paste(chi[p]**2, " cut-off")), "GM cut-off"), col=c("blue", "red"))
+text(x=c(581,619),y=RD[c(581,619)],labels=c(581,619),pos=3,col = "red")
+
+# INSPECT THE MOST OUTLYING OBS
+# RD distance of the outlileres mentioned in the question
+RD[c(581,619)]
+id.most <- which(RD >= 3500); id.most # to check 581,619
+length(id.most)
+
+```
+
+The outliers mentioned in the question are in the top list. For which their roboust Mahalonobis distances were calculated and found to be 3592.471, 20049.102 respectively for observations 581 and 619. These observations are also pointed in the plot. There are 18 observations for which the Mahlonobis distance is greater then or equal to 3500. It is observed that observation 619 is one of the most outlying but 519 is not.
+
+
+```{r}
+# (c)
+# isolation Forest
+
+library(isofor)
+# help(package="isofor")
+
+fit.isoforest <- iForest(dat, nt=100, phi=256)
+pred <- predict(fit.isoforest, newdata=dat)
+#pred # Higher scores correspond to more isolated observations.
+
+# PLOT OF THE SCORES
+score <- scale(pred, center = min(pred), scale = max(pred)-min(pred))
+par(mfrow=c(1,1), mar=rep(4,4))
+plot(x=1:length(score), score, type="p", pch=19, 
+     main="Anomaly Score via iForest",
+     xlab="id", ylab="score", cex=score*3, col="coral2")
+add.seg <- function(x) segments(x0=x[1], y0=0, x1=x[1], y1=x[2], 
+                                lty=1, lwd=1.5, col="cadetblue")
+apply(data.frame(id=1:length(score), score=score), 1, FUN=add.seg)
+eps <- 0.99
+id.outliers <- which(score > quantile(score, eps))
+text(id.outliers, score[id.outliers]+0.03, label=id.outliers, 
+     col="deepskyblue2", cex=0.7) 
+```
+The outliers mentioned in the question are not distinctly visible in the plot from using isolation forest method. 
+
+```{r}
+# LOF
+# install.packages("Rlof")
+library(Rlof)
+# ?Rlof
+
+outlier.scores <- lof(dat, k=5);  #outlier.scores 
+which(outlier.scores > quantile(outlier.scores, 0.95))
+
+# PLOT OF THE LOF SCORES
+score <- scale(outlier.scores, center = min(outlier.scores), 
+	scale = max(outlier.scores)-min(outlier.scores)) # NORMALIZED TO RANGE[0,1]
+par(mfrow=c(1,1), mar=rep(4,4))
+plot(x=1:length(score), score, type="p", pch=1, 
+	main="Local Outlier Factor (LOF)",
+    	xlab="id", ylab="LOF", cex=score*5, col="coral2")
+add.seg <- function(x) segments(x0=x[1], y0=0, x1=x[1], y1=x[2], 
+	lty=1, lwd=1.5, col="cadetblue")
+apply(data.frame(id=1:length(score), score=score), 1, FUN=add.seg)
+eps <- 0.99
+id.outliers <- which(outlier.scores > quantile(outlier.scores, eps))
+text(id.outliers, score[id.outliers]+0.02, label=id.outliers, 
+	col="deepskyblue2", cex=0.7) 
+
+```
+
+The observation 581 and 619 are most outlying as seen form the plot using local outlier factor method.
