@@ -1,0 +1,349 @@
+---
+title: "Project-6"
+author:
+- Chitra Karki^[cbkarki@miners.utep.edu]
+- University of Texas at El Paso (UTEP)
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    keep_tex: yes
+    fig_caption: yes
+    latex_engine: pdflatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
+geometry: margin=1in
+fontsize: 11pt
+spacing: single
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb}
+- \usepackage{amsfonts}
+- \usepackage{amsthm}
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- "\\rhead{STAT 5494-- Statistical Machine Learning}"
+- \cfoot{\thepage}
+- \usepackage{algorithm}
+- \usepackage[noend]{algpseudocode}
+- \usepackage{xcolor}
+editor_options: 
+  chunk_output_type: console
+---
+
+\noindent
+
+\rule{17.5cm}{0.8pt}
+
+We consider a human resource data set concerning employee retention from one Kaggle data
+analytics competition. The data set contains 14,999 observations and 10 variables. The binary
+target left indicates whether a employee left the company.
+
+\section {Data Preparation}
+Bring in the data D and name it as, say, hr. Change the categorical
+variable salary in the data set to ordinal:\newline
+
+hr\$salary \<\- factor(hr\$salary, levels=c("low", "medium",
+"high"), ordered=TRUE)\newline 
+Change the column name for variable sales to department. Make sure that the target variable
+left is categorical, i.e., factor in R. Inspect if there is any missing values and, if so, handle
+them with imputation.
+
+```{r 1}
+setwd("C:/Users/chitr/OneDrive - University of Texas at El Paso/data_science/semesters/sem3-fall2022/datamining-dr.su/computer projects/project-6")
+hr = read.csv(file = "HR_comma_sep.csv")
+
+str(hr)
+
+# sales to department
+names(hr)[which(names(hr)=="sales")] = "department"
+
+# salary to ordinal
+hr$salary <- factor(hr$salary, levels=c("low", "medium",
+"high"), ordered=TRUE)
+#hr$salary = as.numeric(hr$salary)
+
+# missing values
+sum(is.na(hr))
+str(hr)
+```
+
+No missing values in the data set hr.
+
+\section{Exploratory Data Analysis (EDA)}
+Explore the data with EDA. If you type the key word
+`Human Resources Analytics + Kaggle' On Google, you can find many R/Python examples
+posted by other experts with different EDA and supervised learning methods. Please study
+their approach and feel free to reproduce some of the results in this project. Nevertheless,
+make sure that you understand what you are doing and interpret the results appropriately. In
+particular,
+\begin {itemize} 
+  \item[(a)]
+  Make a scatterplot of satisfaction level versus number project and color the points
+differently according to the target variable left. Interpret the results.
+
+  \item[(b)]
+  Optionally, you may compute and visualize the correlation matrix among the variables.
+This is part of the reason that we make sure that salary is ordinal. Since the data contain
+different types of variables, Pearson correlation may not be a good choice.
+Besides the above, present at least THREE more interesting findings from your EDA.
+\end {itemize}
+
+```{r 2(a)}
+# scatter plot
+par(mfrow=c(1,1))
+plot(y=hr$satisfaction_level,x=hr$number_project,col=ifelse(hr$left==0,
+                                                            "red","blue"))
+```
+For project number 7, all left the company, it make sense because people will have low satisfaction with heavy amout or work.
+
+```{r 2(b)}
+str(hr)
+cor = cor(hr[,-c(9,10)])
+suppressPackageStartupMessages(library("corrplot"))
+corrplot(cor)
+
+```
+
+left is negatively correlated with satisfaction level. More people tend to leave if satisfacation is less. Also evaluation is high for people we do more projects and will have more average working
+hours.
+
+\section{Data Partitioning}
+Randomly split the data D into the training set D1 and the test set D2
+with a ratio of approximately 2:1 on the sample size. Always use set.seed() in order to have
+reproducible results.
+In the steps to follow, we will train several classifiers with D1 and then apply each trained
+model on D2 to predict whether an employee will quit his/her current position or its likelihood.
+For each approach, obtain the ROC curve and the corresponding AUC based on the prediction
+on D2.
+
+```{r}
+set.seed(123)
+D1.index = sample(1:nrow(hr),size = (2/3)*nrow(hr))
+D1 = hr[D1.index,]
+D2 = hr[-D1.index,]
+```
+
+\section{Logistic Regression} 
+Fit a regularized logistic regression model as one baseline classifier for
+comparison. You may use either LASSO or SCAD or any other penalty function of your choice.
+Explain how you determine the optimal tuning parameter. Remember that logistic regression
+model is highly interpretable; present your final model and interpret the results.
+
+```{r}
+#install.packages("glmnet")
+suppressPackageStartupMessages(library(glmnet))
+x = model.matrix(left~.,data = D1)
+y = D1[,7]
+set.seed(123)
+lasso.cv = cv.glmnet(x = x,y = y,alpha = 1,family = "binomial")
+plot(lasso.cv)
+
+#min lambda
+lambda_min = lasso.cv$lambda.min
+#1se lambda
+lambda_1se = lasso.cv$lambda.1se
+#regression coefficients
+coef(lasso.cv,s=lambda_min)
+coef(lasso.cv,s=lambda_1se) # lets use this one for the model fitting as this 
+# less number of variables.
+
+x_test = model.matrix(left~.,data = D2)
+
+# fitting the moded with lambda_1se
+lasso.model = glmnet(x = x,y=y,alpha = 1,family = "binomial",
+                     lambda = lambda_1se)
+
+
+# prediction
+lasso_pred = predict(lasso.model,newx = x_test,s=lambda_1se,type = "response")
+
+```
+
+The lasso regression was used. The tuning parameter lambda was obtained via cross validation and with 1.se. The dummy variables were created for the categorical variable like department. If we look at the regression coefficients with lambda minimum and lambda 1se, lambda 1se has move coefficients knocked out to zero.
+
+```{r}
+suppressPackageStartupMessages(library(cvAUC))
+AUC <- ci.cvAUC(predictions=lasso_pred, labels=D2[,7], confidence=0.95)
+auc.ci <- round(AUC$ci, digits=4)
+suppressPackageStartupMessages(library(verification))
+mod.glm <- verify(obs=D2[,7], pred=lasso_pred)
+roc.plot(mod.glm, plot.thres = NULL)
+text(x=0.6, y=0.2, paste("Area under ROC =", round(AUC$cvAUC, digits=4), 
+	"with 95% CI (", auc.ci[1], ",", auc.ci[2], ").",
+	sep=" "), col="blue", cex=1.2)
+```
+
+\section {RF} Fit random forests as another baseline for comparison. RF is one top performer. Also,
+obtain partial dependence plots and variable importance ranking from RF; these results should
+be interpreted as well.
+
+```{r Random Forest}
+suppressPackageStartupMessages(library("randomForest"))
+set.seed(123)
+tuneRF(x=x,y=as.factor(y))
+abline(v=8)
+
+# fitting random forest model with mtry=8
+fr.model = randomForest(x=x,y=as.factor(y),importance=T,mtry=8)
+# which.min(fr.model$err.rate[,3])
+# plot(fr.model)
+rf.model.pred = predict(fr.model,newdata = x_test,type = "prob")
+importance(fr.model)
+varImpPlot(fr.model)
+
+```
+
+From tuning mtry we observed that mtry = 8 produces minimum out of bag error.Form the graphs, its observed that the continuous variables like satisfication level, last _evaluation, number_project,average_monthly_hrs,time_spend_company are more important in predicting the response variable.
+
+```{r partial plot}
+par(mfrow=c(3,2))
+partialPlot(fr.model,x,satisfaction_level)
+partialPlot(fr.model,x,last_evaluation)
+partialPlot(fr.model,x,number_project)
+partialPlot(fr.model,x,average_montly_hours)
+partialPlot(fr.model,x,time_spend_company)
+```
+The partial plots for continuous variables are plotted above. If the curve goes up for increasing variables then there is high probability of left and ,if curve goes down, the probability of left is low.
+
+
+```{r }
+AUC <- ci.cvAUC(predictions=rf.model.pred[,2], labels=D2[,7], confidence=0.95)
+auc.ci <- round(AUC$ci, digits=4)
+mod.rf <- verify(obs=D2[,7], pred=rf.model.pred[,2])
+roc.plot(mod.rf, plot.thres = NULL)
+text(x=0.6, y=0.2, paste("Area under ROC =", round(AUC$cvAUC, digits=4), 
+	"with 95% CI (", auc.ci[1], ",", auc.ci[2], ").",
+	sep=" "), col="blue", cex=1.2)
+```
+
+
+\section{GAM} 
+Fit a generalized additive model. Explain how you determine the smoothing param-
+eters and variable/model selection involved in fitting GAM. Present your final model. Plots
+the (nonlinear) functional forms for continuous predictors and comment on the adequacy of
+the (linear) logistic regression in Part 4.
+
+```{r}
+suppressPackageStartupMessages(library(gam))
+gam.model <- gam(left ~ satisfaction_level + number_project + 
+                   time_spend_company +
+department + last_evaluation + average_montly_hours + Work_accident + 
+  promotion_last_5years + salary , family = binomial,data=D1, trace=T, control = gam.control(epsilon=1e-04, bf.epsilon = 1e-04, maxit=50, bf.maxit = 50))
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+#model selection
+gam.model.step <- step.Gam(gam.model, scope=list(
+"satisfaction_level"=~1 + satisfaction_level + lo(satisfaction_level) + 
+  s(satisfaction_level),
+"last_evaluation"=~1+ last_evaluation + lo(last_evaluation)+ s(last_evaluation),
+"number_project"=~1 + number_project + lo(number_project) + s(number_project),
+"average_montly_hours"=~1 + average_montly_hours + lo(average_montly_hours) + s(average_montly_hours),"time_spend_company"=~1 + time_spend_company + 
+  lo(time_spend_company) + s(time_spend_company)),scale =2, steps=1000, 
+parallel=T, direction="both",trace = F)
+```
+
+```{r message=FALSE, warning=FALSE}
+summary(gam.model.step)
+par(mfrow=c(2,3))
+plot(gam.model.step,se=T)
+
+gm.model.pred <- predict(gam.model.step, newdata=D2, type="response", 
+                         se.fit=FALSE)
+
+AUC <- ci.cvAUC(predictions=gm.model.pred, labels=D2[,7], confidence=0.95); AUC 
+auc.ci <- round(AUC$ci, digits=4)
+
+mod.rf <- verify(obs=D2[,7], pred=rf.model.pred[,2])
+roc.plot(mod.rf, plot.thres = NULL)
+text(x=0.6, y=0.2, paste("Area under ROC =", round(AUC$cvAUC, digits=4), 
+	"with 95% CI (", auc.ci[1], ",", auc.ci[2], ").",
+	sep=" "), col="blue", cex=1.2)
+
+```
+
+Stepwise selection was used to obtain best fitting model for GAM. local and smoothing splines were used for smooting. From summary table its observed that satisfication_level, last_evaluation, average_monthly_hours,time_spend_company have smoothing splines and number_project has localy weighted smpothing as optimum
+
+\section{MARS}
+Train a multivariate adaptive regression splines model. Present the final model
+if possible. Obtain variable importance ranking and partial dependence plots (for continuous predictors.
+
+```{r}
+suppressPackageStartupMessages(library(earth))
+suppressPackageStartupMessages(library("tidyverse"))
+
+# FITTING MARS
+mars.model <- earth(factor(left) ~ .,  data = D1, degree=1, 
+	glm=list(family=binomial(link = "logit")), 
+	pmethod="cv", nfold=3)
+print(mars.model) 
+summary(mars.model) %>% .$coefficients %>% head(10)
+
+# MODEL SELECTION
+par(mfrow=c(1, 1), mar=rep(4,4))
+plot(mars.model, which = 1)
+
+# VARIABLE IMPORTANCE PLOT
+library("vip")
+vip(mars.model) + ggtitle("GCV")
+
+
+# PREDICTION
+mars.model.pred <- predict(mars.model, newdata=D2, type="response")
+
+AUC <- ci.cvAUC(predictions=mars.model.pred, labels=D2[,7], confidence=0.95); 
+auc.ci <- round(AUC$ci, digits=4)
+
+mod.rf <- verify(obs=D2[,7], pred=rf.model.pred[,2])
+roc.plot(mod.rf, plot.thres = NULL)
+text(x=0.6, y=0.2, paste("Area under ROC =", round(AUC$cvAUC, digits=4), 
+	"with 95% CI (", auc.ci[1], ",", auc.ci[2], ").",
+	sep=" "), col="blue", cex=1.2)
+
+```
+
+Again the continuous variables are seems to have more importance in predicting the response variable as mention above in RF modeling.
+
+
+\section {PPR} Train a project pursuit regression model. This model is hard to interpret. Focus on
+its predictive performance only.
+
+
+```{r}
+ppr.model0 <- ppr(left ~ ., data = D1, 
+               nterms = 2, max.terms = 5, 
+               sm.method = "supsmu", bass=0, spen=0)
+summary(ppr.model0);
+par(mfrow=c(2, 2))
+plot(ppr.model0)
+
+ppr.model0.pred <- predict(ppr.model0, newdata = D2)
+
+AUC <- ci.cvAUC(predictions=ppr.model0.pred, labels=D2[,7], confidence=0.95)
+auc.ci <- round(AUC$ci, digits=4)
+
+mod.rf <- verify(obs=D2[,7], pred=rf.model.pred[,2])
+roc.plot(mod.rf, plot.thres = NULL)
+text(x=0.6, y=0.2, paste("Area under ROC =", round(AUC$cvAUC, digits=4), 
+	"with 95% CI (", auc.ci[1], ",", auc.ci[2], ").",
+	sep=" "), col="blue", cex=1.2)
+
+```
+
+\section {Summary}
+Summarize the results and compare the above five supervised learning approaches in terms of their
+pros and cons within this application context of employee retention.
+
+```{r}
+data.frame(Models=c("Lasso Regression","Random Forest","GAM","MARS","PPR"),
+           AUC = c(0.8110163 , 0.9938683, 0.9624532, 0.9727,0.9428))
+
+```
+For  the comparision of AUC, we observed that the lasso regression has the least AUC and Random Forest has the greatest. So, the winner based on the AUC criteria is Random Forest.
+
